@@ -4,7 +4,7 @@ Tags: users, security, registration, email, domains
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,9 +12,13 @@ Restrict WordPress user accounts to administrator-approved email domains.
 
 == Description ==
 
-Allowed Email Domains gives administrators a simple way to restrict WordPress user accounts to approved email domains.
+Restrict WordPress user accounts to administrator-approved email domains.
 
-The plugin is designed for sites where only users from specific organizations, companies, clients, or teams should be added as WordPress users.
+Page Authority - Allowed Domains gives administrators a simple way to control which email domains are permitted when WordPress user accounts are created. When the allowlist is set, any attempt to create a user with an email outside the approved domains is blocked across the standard registration form, the REST API, and WooCommerce registration.
+
+It is designed for sites where only users from specific organizations, companies, clients, or teams should be added as WordPress users. Typical use cases include internal company portals where only staff email addresses should ever become accounts, agency-managed client sites that should reject public signups, membership or B2B sites that vet users by their email domain, and multisite networks that need consistent domain rules across sites.
+
+Existing users are never modified automatically. Instead, the Existing User Audit highlights accounts whose email domains are not on the allowlist so an administrator can review and act on them individually, including removing an account and reassigning its content.
 
 Features include:
 
@@ -31,7 +35,7 @@ Features include:
 == Installation ==
 
 1. Upload the zip file to `wp-content/plugins/`
-2. Activate **Allowed Email Domains** in WordPress Admin
+2. Activate **Page Authority - Allowed Domains** in WordPress Admin
 3. Go to **Users > Allowed Domains**
 4. Add approved domains, one per line
 
@@ -39,13 +43,13 @@ Features include:
 
 = What format should allowed domains use? =
 
-Enter one domain per line. Domains are normalized to begin with `@`.
+Enter one domain per line, with or without the leading `@`. Both `example.com` and `@example.com` work the same way.
 
 Example:
 
-`@example.com`
-`@company.org`
-`@agency.net`
+`example.com`
+`company.org`
+`agency.net`
 
 = What happens if the allowlist is empty? =
 
@@ -113,6 +117,13 @@ Deleting the plugin removes its current options:
 It also cleans up internal flags, transients, user meta, and any leftover keys from prior plugin versions that used the `paad_` or `aed_` prefixes. On multisite, the matching network options are removed as well.
 
 == Changelog ==
+
+= 2.0.2 =
+* Improvement: replaced the post-activation redirect with a dismissible welcome notice. The old redirect could open in a new browser tab in some activation flows; the notice is more reliable and less disruptive
+* Feature: the "domain not approved" error on the Add/Edit User screen now includes an "Allow this domain" button that adds the domain to the allowlist instantly, without reloading the page or losing the details you already entered
+* Listing: added a Plugin URI header so the plugin's WordPress.org page is linked from the in-admin plugin details
+* Listing: rewrote the readme Description so the in-admin "View Details" Description tab renders correctly, and refreshed it with clearer use cases
+* Housekeeping: updated remaining references to the plugin's former name, aligned the FAQ with the "with or without @" domain input, and removed a stray period from the author name
 
 = 2.0.1 =
 * Compatibility: confirmed compatibility with WordPress 7.0, updated "Tested up to" accordingly

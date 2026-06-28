@@ -2,7 +2,7 @@
 /**
  * Uninstall cleanup for Page Authority - Allowed Domains.
  *
- * Developed and maintained by Talisa @ Page Authority.
+ * Developed and maintained by Talisa @ Page Authority
  * https://pageauthority.com/
  *
  * @package Page_Authority_Allowed_Domains
@@ -24,6 +24,7 @@ $pageauth_option_keys = [
     'pageauth_audit_log',
     'pageauth_block_unauthorized_logins',
     'pageauth_do_activation_redirect',
+    'pageauth_show_welcome_notice',
     'pageauth_migration_v200_complete',
 
     // legacy — 1.9.1

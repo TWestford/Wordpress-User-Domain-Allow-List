@@ -1,12 +1,13 @@
 <?php
 /**
  * Plugin Name: Page Authority - Allowed Domains
+ * Plugin URI: https://wordpress.org/plugins/page-authority-allowed-domains/
  * Description: Restricts WordPress user emails to an administrator-managed allowlist of approved domains.
- * Version: 2.0.1
+ * Version: 2.0.2
  * Requires at least: 6.0
  * Tested up to: 7.0
  * Requires PHP: 7.4
- * Author: Talisa @ Page Authority.
+ * Author: Talisa @ Page Authority
  * Author URI: https://pageauthority.com/
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -430,14 +431,44 @@ add_action(
         $domain = pageauth_get_email_domain($user->user_email);
         $settings_url = pageauth_get_settings_url();
 
+        // Build a nonce'd "Allow this domain" link that posts to the existing
+        // add-domain handler and returns the admin to the current screen so they
+        // can retry. Mirrors the audit-table button's nonce scheme. The return
+        // URL is the current admin screen; the handler validates it is a
+        // same-host admin URL before honoring it.
+        $pagenow = isset($GLOBALS['pagenow']) ? (string) $GLOBALS['pagenow'] : 'user-new.php';
+        $current_admin_url = admin_url($pagenow);
+        $allow_domain_url = wp_nonce_url(
+            add_query_arg(
+                [
+                    'action'           => 'pageauth_add_audit_domain',
+                    'domain'           => $domain,
+                    'pageauth_return'  => rawurlencode($current_admin_url),
+                ],
+                admin_url('admin-post.php')
+            ),
+            'pageauth_add_audit_domain_' . md5($domain)
+        );
+
+        $allow_button = sprintf(
+            '<a href="%1$s" class="button button-secondary pageauth-allow-domain-btn" data-domain="%2$s" data-nonce="%3$s">%4$s</a>',
+            esc_url($allow_domain_url),
+            esc_attr($domain),
+            esc_attr(wp_create_nonce('pageauth_add_audit_domain_' . md5($domain))),
+            sprintf(
+                /* translators: %s: Email domain, e.g. @example.com */
+                esc_html__('Allow this domain (%s)', 'page-authority-allowed-domains'),
+                esc_html($domain)
+            )
+        );
+
         $message = sprintf(
             '<div class="pageauth-admin-error-box">' .
                 '<p class="pageauth-admin-error-title">%s</p>' .
                 '<p>%s</p>' .
                 '<p><strong>%s</strong></p>' .
                 '<ol>' .
-                    '<li>%s</li>' .
-                    '<li>%s</li>' .
+                    '<li>%s<br>%s</li>' .
                     '<li>%s</li>' .
                 '</ol>' .
                 '<p>%s</p>' .
@@ -449,16 +480,16 @@ add_action(
                 esc_html(ltrim($domain, '@'))
             ),
             esc_html__('How to fix this:', 'page-authority-allowed-domains'),
+            esc_html__('Allow this domain, then submit the form again:', 'page-authority-allowed-domains'),
+            $allow_button,
             sprintf(
                 wp_kses(
                     /* translators: %s: URL to the Allowed Domains settings page. */
-                    __('Go to <a href="%s">Users → Allowed Domains</a>.', 'page-authority-allowed-domains'),
+                    __('Or manage the full list at <a href="%s">Users → Allowed Domains</a>.', 'page-authority-allowed-domains'),
                     ['a' => ['href' => []]]
                 ),
                 esc_url($settings_url)
             ),
-            esc_html__('Add this domain (or the correct domain) to the allowed list.', 'page-authority-allowed-domains'),
-            esc_html__('Save your changes and try again.', 'page-authority-allowed-domains'),
             esc_html__('Need help? Contact your site administrator.', 'page-authority-allowed-domains')
         );
 
@@ -467,6 +498,49 @@ add_action(
     10,
     3
 );
+
+
+/**
+ * Show a confirmation notice on the Add/Edit User screens after the inline
+ * "Allow this domain" button adds a domain and returns the admin here.
+ *
+ * @return void
+ */
+function pageauth_render_user_screen_domain_notice() {
+
+    if (!current_user_can(pageauth_manage_capability())) {
+        return;
+    }
+
+    $pagenow = isset($GLOBALS['pagenow']) ? (string) $GLOBALS['pagenow'] : '';
+    if (!in_array($pagenow, ['user-new.php', 'user-edit.php', 'profile.php'], true)) {
+        return;
+    }
+
+    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display flag set by our own post-add redirect; no state change.
+    if (!empty($_GET['pageauth_added_domain'])) {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $added = sanitize_text_field(wp_unslash($_GET['pageauth_added_domain']));
+        printf(
+            '<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+            sprintf(
+                /* translators: %s: the domain that was added, e.g. @example.com */
+                esc_html__('Added %s to the allowed domains. You can now create the user with that email domain.', 'page-authority-allowed-domains'),
+                '<code>' . esc_html($added) . '</code>'
+            )
+        );
+    }
+
+    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display flag.
+    if (isset($_GET['pageauth_add_error']) && 'invalid_domain' === $_GET['pageauth_add_error']) {
+        printf(
+            '<div class="notice notice-error is-dismissible"><p>%s</p></div>',
+            esc_html__('That domain could not be added. Please add it manually under Users → Allowed Domains.', 'page-authority-allowed-domains')
+        );
+    }
+}
+
+add_action('admin_notices', 'pageauth_render_user_screen_domain_notice');
 
 
 /**
@@ -594,6 +668,114 @@ function pageauth_print_email_disclaimer() {
 add_action('admin_head-user-new.php', 'pageauth_print_email_disclaimer');
 add_action('admin_head-user-edit.php', 'pageauth_print_email_disclaimer');
 add_action('admin_head-profile.php', 'pageauth_print_email_disclaimer');
+
+
+/**
+ * Print the inline script that powers the "Allow this domain" button in the
+ * unauthorized-domain error box.
+ *
+ * Progressive enhancement: the button is a real link with a working href, so if
+ * this script does not run the click still adds the domain the old way (navigate
+ * to admin-post.php, then redirect back). When the script runs, it intercepts
+ * the click, adds the domain over admin-ajax, and updates the error box in place
+ * so the admin never leaves the user form and is not prompted with the browser's
+ * "Leave site?" unload warning.
+ *
+ * @return void
+ */
+function pageauth_print_allow_domain_script() {
+    ?>
+    <script>
+    (function () {
+        document.addEventListener('click', function (event) {
+            var btn = event.target.closest ? event.target.closest('.pageauth-allow-domain-btn') : null;
+            if (!btn) {
+                return;
+            }
+
+            // Intercept: no navigation, no unload prompt.
+            event.preventDefault();
+
+            if (btn.classList.contains('pageauth-allow-domain-busy')) {
+                return;
+            }
+            btn.classList.add('pageauth-allow-domain-busy');
+
+            var domain = btn.getAttribute('data-domain') || '';
+            var nonce = btn.getAttribute('data-nonce') || '';
+            var originalText = btn.textContent;
+            btn.textContent = <?php echo wp_json_encode(__('Adding…', 'page-authority-allowed-domains')); ?>;
+
+            var body = new URLSearchParams();
+            body.append('action', 'pageauth_add_domain');
+            body.append('domain', domain);
+            body.append('nonce', nonce);
+
+            fetch(<?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                body: body.toString()
+            })
+            .then(function (response) { return response.json(); })
+            .then(function (result) {
+                var box = btn.closest('.pageauth-admin-error-box');
+                if (result && result.success) {
+                    var message = (result.data && result.data.message) ? result.data.message : '';
+
+                    // WordPress wraps our error HTML in its own notice container
+                    // (the red border) — .notice.notice-error in current versions,
+                    // or a legacy .error div in older ones. Neutralize whichever
+                    // wraps the button, otherwise the green success sits inside a
+                    // red box.
+                    var outer = btn.closest('.notice') || btn.closest('.error');
+                    if (outer) {
+                        outer.className = 'notice notice-success is-dismissible';
+                        outer.innerHTML = '<p>' + escapeHtml(message) + '</p>';
+                    } else if (box) {
+                        box.classList.add('pageauth-admin-success-box');
+                        box.classList.remove('pageauth-admin-error-box');
+                        box.innerHTML = '<p>' + escapeHtml(message) + '</p>';
+                    } else {
+                        btn.textContent = originalText;
+                        btn.classList.remove('pageauth-allow-domain-busy');
+                    }
+                } else {
+                    var msg = (result && result.data && result.data.message) ? result.data.message : <?php echo wp_json_encode(__('Could not add the domain. Please try again.', 'page-authority-allowed-domains')); ?>;
+                    btn.textContent = originalText;
+                    btn.classList.remove('pageauth-allow-domain-busy');
+                    window.alert(msg);
+                }
+            })
+            .catch(function () {
+                btn.textContent = originalText;
+                btn.classList.remove('pageauth-allow-domain-busy');
+                // Fall back to the link's normal navigation on network error.
+                window.location.href = btn.getAttribute('href');
+            });
+        });
+
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+    })();
+    </script>
+    <style>
+        .pageauth-admin-success-box {
+            border-left:4px solid #00a32a;
+            background:#f0f6e9;
+            color:#1e4620;
+            padding:8px 12px;
+            margin:6px 0;
+        }
+    </style>
+    <?php
+}
+add_action('admin_head-user-new.php', 'pageauth_print_allow_domain_script');
+add_action('admin_head-user-edit.php', 'pageauth_print_allow_domain_script');
+add_action('admin_head-profile.php', 'pageauth_print_allow_domain_script');
 
 
 /**
@@ -1454,7 +1636,25 @@ function pageauth_handle_add_audit_domain_to_allowlist() {
 
     $domain = pageauth_normalize_domain($raw_domain);
 
+    // Optional return target, used by the inline "Allow this domain" button on
+    // the Add/Edit User screens so the admin lands back where they started.
+    // Only same-host admin URLs are honored; anything else falls back to the
+    // settings/audit page. admin_url() host check prevents open redirects.
+    $return_to = '';
+    if (!empty($_GET['pageauth_return'])) {
+        $candidate = esc_url_raw(wp_unslash($_GET['pageauth_return']));
+        $admin_host = wp_parse_url(admin_url(), PHP_URL_HOST);
+        $candidate_host = wp_parse_url($candidate, PHP_URL_HOST);
+        if ($candidate_host && $admin_host && strtolower($candidate_host) === strtolower($admin_host)) {
+            $return_to = $candidate;
+        }
+    }
+
     if (!$domain) {
+        if ($return_to) {
+            wp_safe_redirect(add_query_arg('pageauth_add_error', 'invalid_domain', $return_to));
+            exit;
+        }
         wp_safe_redirect(pageauth_get_settings_url(['pageauth_add_error' => 'invalid_domain'], 'pageauth-existing-user-audit'));
         exit;
     }
@@ -1469,10 +1669,81 @@ function pageauth_handle_add_audit_domain_to_allowlist() {
         pageauth_clear_audit_cache();
     }
 
+    if ($return_to) {
+        wp_safe_redirect(add_query_arg('pageauth_added_domain', rawurlencode($domain), $return_to));
+        exit;
+    }
+
     wp_safe_redirect(pageauth_get_settings_url(['pageauth_added_domain' => rawurlencode($domain)], 'pageauth-existing-user-audit'));
     exit;
 }
 add_action('admin_post_pageauth_add_audit_domain', 'pageauth_handle_add_audit_domain_to_allowlist');
+
+
+/**
+ * AJAX handler for the inline "Allow this domain" button on the Add/Edit User
+ * screens.
+ *
+ * Mirrors the security model of the admin-post handler above (domain-bound nonce
+ * verified first, then capability check, then normalization), but responds with
+ * JSON so the button can add a domain without navigating away from the user
+ * form. This avoids the browser's "Leave site?" unload prompt and preserves any
+ * data the admin has already typed into the new-user form.
+ *
+ * @return void
+ */
+function pageauth_ajax_add_domain() {
+
+    $raw_domain = isset($_POST['domain']) ? sanitize_text_field(wp_unslash($_POST['domain'])) : '';
+
+    // Nonce bound to the raw domain value, checked before anything else.
+    if (!check_ajax_referer('pageauth_add_audit_domain_' . md5($raw_domain), 'nonce', false)) {
+        wp_send_json_error(
+            ['message' => __('Security check failed. Please reload the page and try again.', 'page-authority-allowed-domains')],
+            403
+        );
+    }
+
+    if (!current_user_can(pageauth_manage_capability())) {
+        wp_send_json_error(
+            ['message' => __('You do not have permission to manage allowed domains.', 'page-authority-allowed-domains')],
+            403
+        );
+    }
+
+    $domain = pageauth_normalize_domain($raw_domain);
+
+    if (!$domain) {
+        wp_send_json_error(
+            ['message' => __('That domain could not be added. Please add it manually under Users → Allowed Domains.', 'page-authority-allowed-domains')],
+            400
+        );
+    }
+
+    $domains = pageauth_get_allowed_domains();
+
+    if (!in_array($domain, $domains, true)) {
+        $domains[] = $domain;
+        sort($domains);
+        pageauth_update_option(PAGEAUTH_OPTION_KEY, array_values(array_unique($domains)));
+        pageauth_log_change($domains);
+        pageauth_clear_audit_cache();
+    }
+
+    $added_message = sprintf(
+        /* translators: %s: the domain that was added, e.g. @example.com */
+        __('Added %s to the allowed domains. You can now create this user.', 'page-authority-allowed-domains'),
+        $domain
+    );
+
+    wp_send_json_success(
+        [
+            'domain'  => $domain,
+            'message' => $added_message,
+        ]
+    );
+}
+add_action('wp_ajax_pageauth_add_domain', 'pageauth_ajax_add_domain');
 
 
 
@@ -2256,14 +2527,15 @@ add_filter(
 
 
 /**
- * Redirect admins to the Allowed Domains settings page after activation.
+ * Show a one-time welcome notice after activation.
  *
- * This improves onboarding by taking administrators directly to the
- * configuration screen immediately after activation.
- */
-
-/**
- * Store activation redirect flag.
+ * Earlier versions performed a hard wp_safe_redirect() to the settings page on
+ * the first admin_init after activation. In some activation flows (notably the
+ * plugin-uploader's "Activate" step, which can run the redirect inside a
+ * secondary request) that redirect could land in a newly opened browser tab.
+ * Showing a dismissible notice on the next normal admin page load instead is
+ * more reliable and less disruptive: it never hijacks navigation, and it points
+ * the admin to the settings screen without forcing them off their current page.
  *
  * @return void
  */
@@ -2273,29 +2545,24 @@ function pageauth_activation_redirect_flag() {
         return;
     }
 
-    add_option('pageauth_do_activation_redirect', 1);
+    // Network activations are handled per-site by site admins; don't flag here.
+    if (is_network_admin()) {
+        return;
+    }
+
+    add_option('pageauth_show_welcome_notice', 1);
 }
 
 register_activation_hook(__FILE__, 'pageauth_activation_redirect_flag');
 
 /**
- * Perform post-activation redirect.
- *
- * Skips:
- * - bulk activations
- * - users without permission
+ * Render the one-time post-activation welcome notice.
  *
  * @return void
  */
-function pageauth_do_activation_redirect() {
+function pageauth_render_welcome_notice() {
 
-    if (!get_option('pageauth_do_activation_redirect')) {
-        return;
-    }
-
-    delete_option('pageauth_do_activation_redirect');
-
-    if (wp_doing_ajax()) {
+    if (!get_option('pageauth_show_welcome_notice')) {
         return;
     }
 
@@ -2303,19 +2570,20 @@ function pageauth_do_activation_redirect() {
         return;
     }
 
-    // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading the standard WordPress bulk-activation flag to opt out of redirect; no state change here.
-    if (isset($_GET['activate-multi'])) {
-        return;
-    }
+    // Show once, then clear the flag.
+    delete_option('pageauth_show_welcome_notice');
 
-    wp_safe_redirect(
-        admin_url('users.php?page=pageauth-settings')
+    $settings_url = admin_url('users.php?page=pageauth-settings');
+
+    printf(
+        '<div class="notice notice-info is-dismissible"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
+        esc_html__('Page Authority - Allowed Domains is active.', 'page-authority-allowed-domains'),
+        esc_url($settings_url),
+        esc_html__('Configure your allowed domains', 'page-authority-allowed-domains')
     );
-
-    exit;
 }
 
-add_action('admin_init', 'pageauth_do_activation_redirect');
+add_action('admin_notices', 'pageauth_render_welcome_notice');
 
 
 /**

@@ -4,7 +4,7 @@ Restricts WordPress user accounts to administrator-approved email domains.
 
 ## Version
 
-2.0.1
+2.0.2
 
 ## Features
 
@@ -21,7 +21,7 @@ Restricts WordPress user accounts to administrator-approved email domains.
 ## Installation
 
 1. Upload the zip file to `wp-content/plugins/`
-2. Activate **Allowed Email Domains** in WordPress Admin
+2. Activate **Page Authority - Allowed Domains** in WordPress Admin
 3. Go to **Users → Allowed Domains**
 4. Add approved domains
 
@@ -108,6 +108,14 @@ Deleting the plugin from WordPress removes its current options:
 It also cleans up internal flags, transients, user meta, and any leftover keys from prior plugin versions that used the `paad_` or `aed_` prefixes. On multisite, the matching network options are removed as well.
 
 ## Changelog
+
+### 2.0.2
+
+- Improvement: replaced the post-activation redirect with a dismissible welcome notice. The old redirect could open in a new browser tab in some activation flows; the notice is more reliable and less disruptive
+- Feature: the "domain not approved" error on the Add/Edit User screen now includes an "Allow this domain" button that adds the domain to the allowlist instantly, without reloading the page or losing the details you already entered
+- Listing: added a Plugin URI header so the plugin's WordPress.org page is linked from the in-admin plugin details
+- Listing: rewrote the readme Description so the in-admin "View Details" Description tab renders correctly, and refreshed it with clearer use cases
+- Housekeeping: updated remaining references to the plugin's former name, aligned the FAQ with the "with or without @" domain input, and removed a stray period from the author name
 
 ### 2.0.1
 
