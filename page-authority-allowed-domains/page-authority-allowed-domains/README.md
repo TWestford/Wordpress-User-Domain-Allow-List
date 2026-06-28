@@ -1,0 +1,193 @@
+# Page Authority - Allowed Domains
+
+Restricts WordPress user accounts to administrator-approved email domains.
+
+## Version
+
+2.0.2
+
+## Features
+
+* Restrict WordPress user emails to approved domains
+* Admin-managed allowlist
+* Supports standard WordPress, REST API, and WooCommerce registrations
+* Existing user audit tools
+* Optional login enforcement
+* Per-user unauthorized account removal with content reassignment
+* Multisite-aware protections
+* Lightweight with no custom database tables
+* Short-lived audit caching for better admin performance
+
+## Installation
+
+1. Upload the zip file to `wp-content/plugins/`
+2. Activate **Page Authority - Allowed Domains** in WordPress Admin
+3. Go to **Users → Allowed Domains**
+4. Add approved domains
+
+## Example Allowlist
+
+```text
+@example.com
+@company.org
+@agency.net
+```
+
+## Compatibility
+
+* WordPress 6.0+
+* PHP 7.4+
+* Tested on WordPress 7.0
+
+## Security & Enforcement
+
+The plugin currently includes:
+
+* allowlist enforcement for standard WordPress registration flows
+* REST API user creation/update enforcement
+* WooCommerce registration enforcement
+* optional login-time enforcement
+* existing user audit reporting
+* per-user unauthorized account deletion tools with content reassignment
+* multisite-aware safeguards
+
+Safety protections include:
+
+* capability checks
+* nonce verification (verified before any state changes)
+* confirmation prompts
+* explicit content reassignment or delete confirmation before user removal
+* current-admin protection
+* multisite Super Admin protection
+* server-side failsafe that refuses to silently delete a user's content
+
+Recommended operational practices:
+
+* review the Existing User Audit before enabling login blocking
+* test custom registration/SSO flows before production rollout
+* maintain regular database backups before deleting users
+* restrict plugin management access to trusted administrators only
+
+## Existing User Audit
+
+The plugin includes an audit-only report under:
+
+```text
+Users → Allowed Domains
+```
+
+The audit identifies existing users whose email domains are not currently allowed.
+
+The audit does not automatically:
+
+* disable users
+* log users out
+* modify email addresses
+
+Unauthorized users can be reviewed individually, removed directly from the audit table, or used to quickly add their domain to the allowlist.
+
+## Deleting Unauthorized Users
+
+When deleting an unauthorized user from the audit, the plugin checks for content owned by that user (posts, pages, and other published content). If any is present, a confirmation modal lets the administrator choose:
+
+* **Reassign all content** to another user whose email domain is on the allowlist (only compliant users appear in the dropdown), or
+* **Delete the user and all their content**
+
+If a user owns no content, deletion proceeds with a simple confirmation.
+
+The server validates every reassignment target, refuses to silently delete content if neither option was explicitly selected, and rejects reassignment to a user whose email is not on the allowlist.
+
+## Uninstall
+
+Deleting the plugin from WordPress removes its current options:
+
+* `pageauth_allowed_domains`
+* `pageauth_audit_log`
+* `pageauth_block_unauthorized_logins`
+
+It also cleans up internal flags, transients, user meta, and any leftover keys from prior plugin versions that used the `paad_` or `aed_` prefixes. On multisite, the matching network options are removed as well.
+
+## Changelog
+
+### 2.0.2
+
+- Improvement: replaced the post-activation redirect with a dismissible welcome notice. The old redirect could open in a new browser tab in some activation flows; the notice is more reliable and less disruptive
+- Feature: the "domain not approved" error on the Add/Edit User screen now includes an "Allow this domain" button that adds the domain to the allowlist instantly, without reloading the page or losing the details you already entered
+- Listing: added a Plugin URI header so the plugin's WordPress.org page is linked from the in-admin plugin details
+- Listing: rewrote the readme Description so the in-admin "View Details" Description tab renders correctly, and refreshed it with clearer use cases
+- Housekeeping: updated remaining references to the plugin's former name, aligned the FAQ with the "with or without @" domain input, and removed a stray period from the author name
+
+### 2.0.1
+
+- Compatibility: confirmed compatibility with WordPress 7.0, updated `Tested up to` accordingly
+- Feature: added a "Support" link next to the existing "GitHub" link on the Plugins screen, pointing to the plugin's WordPress.org support forum
+- UX: the domain input on the settings page no longer implies the `@` prefix is required. Placeholder and description now indicate that domains can be entered with or without the leading `@`. Validation behavior is unchanged
+- Hardening: AJAX-driven user creation requests with an unauthorized email domain now receive a structured JSON error response (HTTP 403 with `pageauth_invalid_domain` code) instead of a full-page `wp_die()`, so third-party plugins that create users via admin-ajax can surface the error inline
+
+### 2.0.0
+
+- Compliance: renamed internal prefix from `paad_` (4 characters) to `pageauth_` (8 characters) across functions, constants, options, transients, user meta, nonces, AJAX actions, hooks, page slug, CSS classes, HTML IDs, and JavaScript data attributes. The new prefix is unique, brand-aligned, and far less likely to collide with any other plugin
+- Migration: existing allowlist, audit log, and login-blocking preference are migrated transparently on upgrade from either prior prefix (`paad_` from 1.9.1 or `aed_` from 1.9.0 and earlier)
+- Compatibility: both legacy settings URLs (`users.php?page=aed-settings` and `users.php?page=paad-settings`) now redirect to the current `pageauth-settings` slug
+- Cleanup: `uninstall.php` removes both the current and all legacy option, transient, and user-meta keys, so removal is clean regardless of which version was last installed
+
+### 1.9.1
+
+- Compliance: renamed internal prefix from `aed_` (3 characters) to `paad_` (4 characters) across functions, constants, options, transients, nonces, AJAX actions, page slug, CSS classes, and HTML IDs to meet WordPress.org Plugin Directory naming requirements
+- Migration: existing allowlist, audit log, and login-blocking preference are migrated transparently on upgrade
+- Compatibility: legacy `users.php?page=aed-settings` URL now redirects to the new `paad-settings` slug
+- Cleanup: rewrote `uninstall.php` to actually remove the options the plugin stores (the previous file targeted a key prefix that was never written), and added cleanup for legacy `aed_*` keys
+
+### 1.9.0
+
+- Security: nonce verification now runs before capability checks and before any input processing in the audit-domain-add and user-delete handlers
+- Security: programmatic user creation in admin context (admin-ajax, importers, REST in admin) is no longer silently allowed; only the user-edit/user-new screens still defer to the inline error path
+- Performance: existing-user audit query is paginated to avoid loading every user into memory on large sites
+- Feature: deleting an unauthorized user who owns posts or pages now opens a confirmation modal with a dropdown of compliant users for content reassignment, or an explicit "delete content" option
+- Feature: success notice when a domain is added directly from the audit
+- Feature: clearer error notices for delete failures (missing user, current user, super admin, allowed-now, content-without-confirmation, invalid reassignment target)
+- Hardening: server-side failsafe refuses to delete a user with owned content unless reassignment or explicit content-delete is specified (protects JS-disabled admins)
+- Hardening: reassignment target is revalidated as a real, compliant user before deletion proceeds
+- Cleanup: removed dead query-parameter handling, consistent `wp_unslash`-based POST input handling throughout
+
+### 1.8.15
+
+- Removed redundant GitHub plugin site link from the Plugins screen
+
+### 1.8.14
+
+- Added GitHub plugin metadata link on the WordPress Plugins screen
+- Added Page Authority author URL metadata
+
+### 1.8.12
+- Cleaned and consolidated changelog entries
+
+### 1.8.11
+- Updated WordPress.org plugin slug and text domain compatibility
+- Fixed automated scan compatibility issues
+
+### 1.8.9
+- Renamed plugin to "Page Authority - Allowed Domains"
+
+### 1.8.2
+- Added unauthorized user audit tools
+- Added quick actions for adding domains and deleting users
+
+### 1.8.1
+- Added login enforcement protections for unauthorized domains
+
+### 1.8.0
+- Added WooCommerce, REST API, and multisite enforcement support
+
+### 1.7.0
+- Added GitHub update compatibility support
+- Improved admin navigation and documentation
+
+### 1.6.0
+- Improved validation, admin UX, and security handling
+
+### 1.5.0
+- Added uninstall cleanup and compatibility metadata
+
+### 1.0.0
+- Initial plugin release
